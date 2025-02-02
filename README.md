@@ -19,5 +19,5 @@ How to install:
 
 Have fun - hope it helps. 
 
-Your Mautic Friendy by twentyZEN GmbH
+Your Mautic Friends by twentyZEN GmbH
 https://twentyzen.com/
