@@ -12,7 +12,7 @@ The example in the default setup is made for 14 mails / sec. limit. It sends up 
 
 ## How to install ##
 * place the files in your web directory, but not in the public folder (or docroot)
-* edit .env file and place it in the same folder as the script file mautic.sh
+* edit the env.example file and place it as .env in the same folder as the script file mautic.sh
 * make the mautic.sh file executable with chmod +x, check the ownership of the file as well (should be your webprojects user)
 * make sure, you set the paths correctly
 * test drive manually by running mautic.sh
