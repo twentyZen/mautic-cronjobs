@@ -1,6 +1,6 @@
 # mautic-cronjobs
 
-First - make sure to star and subscribe to the project to get informed about updates to the script.
+** First - make sure to star and subscribe to the project to get informed about updates to the script. **
 
 This script and environment file helps to manage cron jobs for Mautic. 
 Its split into two parts, so you can exchange the script later easily later on. You configure the bash script via the env file. Load it into your Mautic webproject outside of the public or docroot folder. Adjust the paths according to your setup. Define where logs should be saved to.
