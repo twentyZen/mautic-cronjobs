@@ -18,6 +18,11 @@ The example in the default setup is made for 14 mails / sec. limit. It sends up 
 * test drive manually by running mautic.sh
 * check the logs
 
+## Example env file ##
+* reports and webhook queuing is disabled, set to true if you want to use it
+* mail queuing is enabled, set COMMAND_QUEUE to false, if you send directly without queue
+* COMMAND_ORDER sets the order of execution of the commands
+
 Have fun - hope it helps. 
 
 Your Mautic Friends by twentyZEN GmbH
