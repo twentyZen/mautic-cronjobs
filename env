@@ -1,0 +1,71 @@
+# MIT License
+#
+# Copyright (c) 2025 twentyZEN GmbH - twentyzen.com
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Version 1 - 02.02.2025
+
+# PHP interpreter with defined memory limit, check your environment
+PHP_INTERPRETER="php8.3 -d memory_limit=1G"
+
+# Path to the Mautic console
+PATH_TO_CONSOLE="../public/bin/console"
+
+# Lockfile path
+LOCKFILE="./cronjob.lock"
+
+# Directory for logs
+LOG_DIR="./logs"
+ERROR_LOG_DIR="./errorlogs"
+
+# Maximum number of log files to keep
+MAX_LOGS=10
+MAX_ERROR_LOGS=10
+
+# Email settings
+BROADCASTS_SEND_LIMIT=560
+
+# Command limits
+SEGMENTS_UPDATE_LIMIT=900
+CAMPAIGNS_REBUILD_LIMIT=300
+IMPORT_LIMIT=500
+
+# Define the order in which commands are executed
+COMMAND_ORDER=SEGMENTS_UPDATE,CAMPAIGNS_REBUILD,CAMPAIGNS_TRIGGER,BROADCASTS_SEND,UNUSED_IP_DELETE,IMPORT,WEBHOOKS,REPORTS
+
+# Queue processing variables for queued sending of emails
+# Set EMAILS_PER_BATCH to your assigned rate limit per second, MAX_LOOPS should be BROADCASTS_SEND_LIMIT divided by EMAILS_PER_BATCH
+EMAILS_PER_BATCH=14
+MAX_LOOPS=40
+QUEUE_TIME_LIMIT=1
+QUEUE_DELAY=1
+
+# Commands and execution flag (format: "command|true/false")
+COMMAND_SEGMENTS_UPDATE="mautic:segments:update --batch-limit=$SEGMENTS_UPDATE_LIMIT|true"
+COMMAND_BROADCASTS_SEND="mautic:broadcasts:send --batch=$BROADCASTS_SEND_LIMIT|true"
+COMMAND_CAMPAIGNS_REBUILD="mautic:campaigns:rebuild --batch-limit=$CAMPAIGNS_REBUILD_LIMIT|true"
+COMMAND_CAMPAIGNS_TRIGGER="mautic:campaigns:trigger|true"
+COMMAND_UNUSED_IP_DELETE="mautic:unusedip:delete|true"
+COMMAND_IMPORT="mautic:import --limit=$IMPORT_LIMIT|true"
+COMMAND_WEBHOOKS="mautic:webhooks:process|false"
+COMMAND_REPORTS="mautic:reports:scheduler|false"
+
+# Queue processing command using the new time limit variable
+COMMAND_QUEUE="messenger:consume email --limit=$EMAILS_PER_BATCH --time-limit=$QUEUE_TIME_LIMIT|true"
