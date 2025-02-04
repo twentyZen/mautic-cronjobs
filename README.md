@@ -23,6 +23,11 @@ The example in the default setup is made for 14 mails / sec. limit. It sends up 
 * mail queuing is enabled, set COMMAND_QUEUE to false, if you send directly without queue
 * COMMAND_ORDER sets the order of execution of the commands
 
+## Useful settings ##
+For now please follow this thread: https://forum.mautic.org/t/a-small-guide-to-send-mails-using-doctrine-for-queue-in-mautic-5/33118/22
+If you send directly without queue (not recommended) be careful with the batch size. SMTP can only handle up to 10 per call, API differs between Mail Service Providers, e.g. 50 for Mailjet API v3.  
+
+
 Have fun - hope it helps. 
 
 Your Mautic Friends by twentyZEN GmbH
