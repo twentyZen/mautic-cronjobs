@@ -27,6 +27,8 @@ The example in the default setup is made for 14 mails / sec. limit. It sends up 
 For now please follow this thread: https://forum.mautic.org/t/a-small-guide-to-send-mails-using-doctrine-for-queue-in-mautic-5/33118/22
 If you send directly without queue (not recommended) be careful with the batch size. SMTP can only handle up to 10 per call, API differs between Mail Service Providers, e.g. 50 for Mailjet API v3.  
 
+## Support ##
+There is no regular support. Please open a discussion for ideas / questions in https://forum.mautic.org/c/general-discussion/6 and mention user dirk_s. Please only open real issues as git issues for this project.
 
 Have fun - hope it helps. 
 
