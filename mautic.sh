@@ -22,7 +22,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Version 1 - 02.02.2025
+# Version 2 - 04.02.2025
 
 # Load .env if available, using the script's directory as the base path
 script_dir="$(dirname "$0")"
