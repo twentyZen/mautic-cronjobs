@@ -108,6 +108,7 @@ if [ "$queue_exec_flag" = "true" ]; then
     initial_count=$($phpinterpreter $pathtoconsole doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages" \
         | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
     initial_count=$(echo "$initial_count" | xargs)
+    [[ "$initial_count" =~ ^[0-9]+$ ]] || initial_count=0
     echo "Messages initially in queue: $initial_count" | tee -a "$log_file"
     
     if [ "$initial_count" -gt 0 ]; then
@@ -119,6 +120,7 @@ if [ "$queue_exec_flag" = "true" ]; then
             count=$($phpinterpreter $pathtoconsole doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages" \
                 | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
             count=$(echo "$count" | xargs)
+            [[ "$count" =~ ^[0-9]+$ ]] || count=0
             echo "Messages remaining in queue: $count" | tee -a "$log_file"
             
             [ "$count" -eq 0 ] && break
