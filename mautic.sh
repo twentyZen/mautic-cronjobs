@@ -49,19 +49,14 @@ max_loops="$MAX_LOOPS"
 mkdir -p "$log_dir"
 mkdir -p "$error_log_dir"
 
-# Lock mechanism: prevent multiple script instances
-if [ -f "$lockfile" ]; then
-    LOCK_PID=$(cat "$lockfile")
-    if kill -0 "$LOCK_PID" 2>/dev/null; then
-        echo "Script is already running with PID $LOCK_PID."
-        exit 1
-    else
-        echo "Stale lock file found, removing it."
-        rm -f "$lockfile"
-    fi
+# Lock mechanism: prevent multiple script instances using flock
+exec 200>"$lockfile"
+if ! flock -n 200; then
+    existing_pid=$(cat "$lockfile" 2>/dev/null)
+    echo "Script is already running with PID $existing_pid." >&2
+    exit 1
 fi
-
-echo $MYSELF_PID > "$lockfile"
+echo "$MYSELF_PID" >&200
 trap 'rm -f "$lockfile"; exit' INT TERM EXIT
 
 log_file="$log_dir/$(date +'%Y%m%d_%H%M%S').log"
