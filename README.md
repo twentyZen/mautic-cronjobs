@@ -25,7 +25,15 @@ The example in the default setup is made for 14 mails / sec. limit. It sends up 
 
 ## Useful settings ##
 For now please follow this thread: https://forum.mautic.org/t/a-small-guide-to-send-mails-using-doctrine-for-queue-in-mautic-5/33118/22
-If you send directly without queue (not recommended) be careful with the batch size. SMTP can only handle up to 10 per call, API differs between Mail Service Providers, e.g. 50 for Mailjet API v3.  
+If you send directly without queue (not recommended) be careful with the batch size. SMTP can only handle up to 10 per call, API differs between Mail Service Providers, e.g. 50 for Mailjet API v3.
+
+## Locking mechanism ##
+The script prevents concurrent executions by acquiring an exclusive lock on the
+file defined by `LOCKFILE`. It uses the `flock` command from the `util-linux`
+package (preinstalled on most Linux systems). If multiple cron jobs attempt to
+start simultaneously, the lock ensures only the first one continues. On minimal
+containers you may need to install `util-linux` manually so that `flock` is
+available.
 
 ## Support ##
 There is no regular support. Please open a discussion for ideas / questions in https://forum.mautic.org/c/general-discussion/6 and mention user dirk_s. Please only open real issues as git issues for this project.
