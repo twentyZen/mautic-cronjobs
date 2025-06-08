@@ -4,9 +4,9 @@
 
 ## Description ##
 This script and environment file helps to manage cron jobs for Mautic. 
-Its split into two parts, so you can exchange the script later easily later on. You configure the bash script via the env file. Load it into your Mautic webproject outside of the public or docroot folder. Adjust the paths according to your setup. Define where logs should be saved to.
+It’s split into two parts, so you can easily exchange the script later on. You configure the bash script via the env file. Load it into your Mautic webproject outside of the public or docroot folder. Adjust the paths according to your setup. Define where logs should be saved to.
 
-It also contains an algorithm, that helps to comply with rate limits e.g. of AWS SES. Its a simple approach, which should work fine for most installations. However, if high volumes of mail and performance is important, then you might want to tweak it a bit.
+It also contains an algorithm, that helps to comply with rate limits e.g. of AWS SES. It’s a simple approach, which should work fine for most installations. However, if high volumes of mail and performance is important, then you might want to tweak it a bit.
 
 The example in the default setup is made for 14 mails / sec. limit. It sends up to 14 mails and up to 1 sec in one loop. If there are still mails in the queue to be sent, it will wait for a second and send again up to the max amount of loops defined for one cronjob run. This way it never sends more than 14 mails per second, as it waits for a second after first send. Of course we could wait less, as sending takes some time. But this is the safe path.
 
