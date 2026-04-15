@@ -25,7 +25,7 @@
 # Version 2 - 04.02.2025
 
 # Load .env if available, using the script's directory as the base path
-script_dir="$(dirname "$0")"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$script_dir/.env" ]; then
     set -o allexport
     source "$script_dir/.env"
@@ -33,7 +33,7 @@ if [ -f "$script_dir/.env" ]; then
 fi
 
 # Set working directory to the script's location
-cd "$script_dir"
+cd "$script_dir" || exit 1
 
 MYSELF_PID=$$
 
@@ -46,6 +46,32 @@ max_logs="$MAX_LOGS"
 error_log_dir="$ERROR_LOG_DIR"
 max_error_logs="$MAX_ERROR_LOGS"
 max_loops="$MAX_LOOPS"
+
+require_env_var() {
+    local name="$1"
+    if [ -z "${!name:-}" ]; then
+        echo "Required environment variable '$name' is not set." >&2
+        exit 1
+    fi
+}
+
+require_env_var "PHP_INTERPRETER"
+require_env_var "PATH_TO_CONSOLE"
+require_env_var "LOCKFILE"
+require_env_var "LOG_DIR"
+require_env_var "ERROR_LOG_DIR"
+require_env_var "MAX_LOGS"
+require_env_var "MAX_ERROR_LOGS"
+require_env_var "MAX_LOOPS"
+require_env_var "COMMAND_ORDER"
+require_env_var "COMMAND_QUEUE"
+
+read -r -a php_cmd <<< "$phpinterpreter"
+if [ ${#php_cmd[@]} -eq 0 ]; then
+    echo "PHP_INTERPRETER does not contain an executable command." >&2
+    exit 1
+fi
+
 mkdir -p "$log_dir"
 mkdir -p "$error_log_dir"
 
@@ -57,7 +83,10 @@ if ! flock -n 200; then
     exit 1
 fi
 echo "$MYSELF_PID" >&200
-trap 'rm -f "$lockfile"; exit' INT TERM EXIT
+cleanup() {
+    flock -u 200
+}
+trap cleanup EXIT
 
 log_file="$log_dir/$(date +'%Y%m%d_%H%M%S').log"
 error_log_file="$error_log_dir/$(date +'%Y%m%d_%H%M%S')_error.log"
@@ -67,20 +96,56 @@ error_log_file="$error_log_dir/$(date +'%Y%m%d_%H%M%S')_error.log"
 limit_log_files() {
     local dir="$1"
     local max="$2"
-    (cd "$dir" && ls -t *.log 2>/dev/null | tail -n +$((max+1)) | xargs rm -f)
+    [ "$max" -ge 0 ] 2>/dev/null || return 0
+
+    local files=()
+    local to_remove=()
+    shopt -s nullglob
+    files=("$dir"/*.log)
+    shopt -u nullglob
+
+    [ ${#files[@]} -le "$max" ] && return 0
+
+    mapfile -t files < <(printf '%s\0' "${files[@]}" | xargs -0 ls -1t -- 2>/dev/null)
+    to_remove=("${files[@]:$max}")
+    [ ${#to_remove[@]} -gt 0 ] && rm -f -- "${to_remove[@]}"
 }
 
 # Execute a command and log its output, removing empty lines
 execute_command() {
     local cmd="$1"
     echo "Executing: $cmd" | tee -a "$log_file"
-    local output
-    output=$($phpinterpreter $pathtoconsole $cmd 2>&1)
-    local ret=$?
-    output=$(echo "$output" | sed '/^$/d')
-    echo "$output" | tee -a "$log_file"
-    [ $ret -ne 0 ] && echo "$output" >> "$error_log_file"
+    local tmp_output
+    local ret
+    local cmd_parts=()
+
+    read -r -a cmd_parts <<< "$cmd"
+    tmp_output=$(mktemp "${TMPDIR:-/tmp}/mautic-cronjobs.XXXXXX") || exit 1
+
+    "${php_cmd[@]}" "$pathtoconsole" "${cmd_parts[@]}" 2>&1 \
+        | sed '/^$/d' \
+        | tee -a "$log_file" > "$tmp_output"
+    ret=${PIPESTATUS[0]}
+
+    if [ "$ret" -ne 0 ]; then
+        cat "$tmp_output" >> "$error_log_file"
+    fi
+
+    rm -f "$tmp_output"
     return $ret
+}
+
+count_queue_messages() {
+    local count
+
+    count=$("${php_cmd[@]}" "$pathtoconsole" doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages" 2>/dev/null \
+        | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
+
+    if [[ "$count" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$count"
+    else
+        printf '0\n'
+    fi
 }
 
 # Execute commands in a defined order based on the COMMAND_ORDER variable
@@ -100,22 +165,19 @@ done
 IFS="|" read -r queue_command queue_exec_flag <<< "$COMMAND_QUEUE"
 if [ "$queue_exec_flag" = "true" ]; then
     # Get the initial count of messages in the queue and trim whitespace
-    initial_count=$($phpinterpreter $pathtoconsole doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages" \
-        | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
-    initial_count=$(echo "$initial_count" | xargs)
-    [[ "$initial_count" =~ ^[0-9]+$ ]] || initial_count=0
+    initial_count=$(count_queue_messages)
     echo "Messages initially in queue: $initial_count" | tee -a "$log_file"
     
     if [ "$initial_count" -gt 0 ]; then
         current_loop=0
         while [ $current_loop -lt $max_loops ]; do
             current_loop=$((current_loop+1))
-            execute_command "$queue_command"
+            if ! execute_command "$queue_command"; then
+                echo "Queue command failed in loop $current_loop. Stopping queue processing." | tee -a "$log_file" "$error_log_file"
+                break
+            fi
             
-            count=$($phpinterpreter $pathtoconsole doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages" \
-                | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
-            count=$(echo "$count" | xargs)
-            [[ "$count" =~ ^[0-9]+$ ]] || count=0
+            count=$(count_queue_messages)
             echo "Messages remaining in queue: $count" | tee -a "$log_file"
             
             [ "$count" -eq 0 ] && break
@@ -128,5 +190,3 @@ fi
 
 limit_log_files "$log_dir" "$max_logs"
 limit_log_files "$error_log_dir" "$max_error_logs"
-
-rm -f "$lockfile"
