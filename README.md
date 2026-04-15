@@ -23,6 +23,33 @@ The example in the default setup is made for 14 mails / sec. limit. It sends up 
 * mail queuing is enabled, set COMMAND_QUEUE to false, if you send directly without queue
 * COMMAND_ORDER sets the order of execution of the commands
 
+## Variant for SES plugins with built-in throttling ##
+If your Mautic mail transport already throttles outgoing API calls itself, you do not need the outer queue loop from `mautic.sh`.
+
+The etailors Amazon SES plugin explicitly documents:
+* built-in rate limiting to honor SES sending quotas
+* dynamic batch size matching the current SES max send rate
+* throttling outgoing API calls using `usleep()`
+* optional override via DSN `ratelimit`
+
+For that setup, use:
+* `mautic_ses_plugin.sh`
+* `.env.etailors-ses.example` as your starting point for `.env`
+
+This keeps one consumer run per cron execution and leaves per-second SES throttling to the plugin.
+
+## Variant for long-running SES workers ##
+If you want to run `messenger:consume` as a long-running worker under `systemd` or `supervisor`, use:
+* `mautic_ses_daemon.sh`
+* `.env.etailors-ses-daemon.example`
+* `deploy/systemd/mautic-ses-worker.service` as a starting point
+
+This variant does not set `--limit` or `--time-limit` by default. The worker is expected to run continuously, while the service manager restarts it when needed and the SES plugin controls outbound throttling.
+
+Typical split for this setup:
+* run the maintenance commands from `mautic.sh` or `mautic_ses_plugin.sh` via cron
+* run the queue consumer continuously via `mautic_ses_daemon.sh`
+
 ## Useful settings ##
 For now please follow this thread: https://forum.mautic.org/t/a-small-guide-to-send-mails-using-doctrine-for-queue-in-mautic-5/33118/22
 If you send directly without queue (not recommended) be careful with the batch size. SMTP can only handle up to 10 per call, API differs between Mail Service Providers, e.g. 50 for Mailjet API v3.
