@@ -22,7 +22,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Version 3 - 05.05.2026
+# Version 3 - SES plugin managed throttling
 
 # Load .env if available, using the script's directory as the base path
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -45,7 +45,6 @@ log_dir="$LOG_DIR"
 max_logs="$MAX_LOGS"
 error_log_dir="$ERROR_LOG_DIR"
 max_error_logs="$MAX_ERROR_LOGS"
-max_loops="$MAX_LOOPS"
 
 require_env_var() {
     local name="$1"
@@ -62,7 +61,6 @@ require_env_var "LOG_DIR"
 require_env_var "ERROR_LOG_DIR"
 require_env_var "MAX_LOGS"
 require_env_var "MAX_ERROR_LOGS"
-require_env_var "MAX_LOOPS"
 require_env_var "COMMAND_ORDER"
 require_env_var "COMMAND_QUEUE"
 
@@ -90,7 +88,6 @@ trap cleanup EXIT
 
 log_file="$log_dir/$(date +'%Y%m%d_%H%M%S').log"
 error_log_file="$error_log_dir/$(date +'%Y%m%d_%H%M%S')_error.log"
-
 
 # Limit the number of log files to max_logs
 limit_log_files() {
@@ -135,57 +132,21 @@ execute_command() {
     return $ret
 }
 
-count_queue_messages() {
-    local count
-
-    count=$("${php_cmd[@]}" "$pathtoconsole" doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages" 2>/dev/null \
-        | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
-
-    if [[ "$count" =~ ^[0-9]+$ ]]; then
-        printf '%s\n' "$count"
-    else
-        printf '0\n'
-    fi
-}
-
 # Execute commands in a defined order based on the COMMAND_ORDER variable
 IFS=',' read -r -a command_array <<< "$COMMAND_ORDER"
 for cmd in "${command_array[@]}"; do
-    # Construct variable name for the command (e.g. COMMAND_SEGMENTS_UPDATE)
     command_var="COMMAND_${cmd}"
-    # Split command and its execution flag using '|'
     IFS="|" read -r command_string exec_flag <<< "${!command_var}"
-    
+
     if [ "$exec_flag" = "true" ]; then
         execute_command "$command_string"
     fi
 done
 
-# Process the queue if the COMMAND_QUEUE execution flag is true
+# Run the queue consumer exactly once and let the SES plugin handle throttling.
 IFS="|" read -r queue_command queue_exec_flag <<< "$COMMAND_QUEUE"
 if [ "$queue_exec_flag" = "true" ]; then
-    # Get the initial count of messages in the queue and trim whitespace
-    initial_count=$(count_queue_messages)
-    echo "Messages initially in queue: $initial_count" | tee -a "$log_file"
-    
-    if [ "$initial_count" -gt 0 ]; then
-        current_loop=0
-        while [ $current_loop -lt $max_loops ]; do
-            current_loop=$((current_loop+1))
-            if ! execute_command "$queue_command"; then
-                echo "Queue command failed in loop $current_loop. Stopping queue processing." | tee -a "$log_file" "$error_log_file"
-                break
-            fi
-            
-            count=$(count_queue_messages)
-            echo "Messages remaining in queue: $count" | tee -a "$log_file"
-            
-            [ "$count" -eq 0 ] && break
-            sleep "$QUEUE_DELAY"
-        done
-    else
-        echo "No messages in queue. Skipping queue processing." | tee -a "$log_file"
-    fi
+    execute_command "$queue_command"
 fi
 
 limit_log_files "$log_dir" "$max_logs"
