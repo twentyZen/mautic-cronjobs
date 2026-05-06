@@ -10,6 +10,32 @@ It also contains an algorithm, that helps to comply with rate limits e.g. of AWS
 
 The example in the default setup is made for 14 mails / sec. limit. It sends up to 14 mails and up to 1 sec in one loop. If there are still mails in the queue to be sent, it will wait for a second and send again up to the max amount of loops defined for one cronjob run. This way it never sends more than 14 mails per second, as it waits for a second after first send. Of course we could wait less, as sending takes some time. But this is the safe path.
 
+## What changed in version 3 ##
+Version 3 adds a more robust base script and separates the available operating modes more clearly:
+* hardened `mautic.sh` with stricter env validation, safer path handling and more robust log rotation
+* optional generic long-running worker via `mautic_daemon.sh`
+* optional etailors-specific cron and daemon variants via `mautic_ses_plugin.sh` and `mautic_ses_daemon.sh`
+* example `systemd` unit files for generic and etailors worker setups
+* updated documentation for cron mode, daemon mode and etailors-specific throttling behavior
+
+## Recommended directory layout ##
+Recommended installation path:
+* scripts: `/opt/mautic-cronjobs`
+* logs: `/opt/mautic-cronjobs/logs`
+* error logs: `/opt/mautic-cronjobs/errorlogs`
+
+`/opt/mautic-cronjobs` is a good default if you want one dedicated system-level location for scripts, `.env`, lock files and logs, and it matches the example `systemd` unit files in this repository.
+
+It is also perfectly valid to install the scripts parallel to the Mautic app, as long as they stay outside the public web root or docroot. Typical examples:
+* `/var/www/mautic-cronjobs`
+* `/var/www/mautic/../mautic-cronjobs`
+* `/srv/www/mautic-cronjobs`
+
+The important part is not the exact absolute path, but the layout:
+* keep the scripts outside `public/` or the docroot
+* keep `.env`, lock files and logs in the same dedicated script directory
+* make sure the web or worker user can read the scripts and write logs and lock files
+
 ## How to install ##
 * place the files in your web directory, but not in the public folder (or docroot)
 * edit the `.env.example` file and copy it as `.env` in the same folder as the script file `mautic.sh`
@@ -17,6 +43,40 @@ The example in the default setup is made for 14 mails / sec. limit. It sends up 
 * make sure, you set the paths correctly
 * test drive manually by running mautic.sh
 * check the logs
+
+### Example install with wget ###
+Create a dedicated directory first:
+```bash
+mkdir -p /opt/mautic-cronjobs
+cd /opt/mautic-cronjobs
+```
+
+Download the files you need from the `beta` branch:
+```bash
+wget -O mautic.sh https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/mautic.sh
+wget -O .env.example https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/.env.example
+```
+
+Optional files for generic daemon mode:
+```bash
+wget -O mautic_daemon.sh https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/mautic_daemon.sh
+wget -O .env.daemon.example https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/.env.daemon.example
+wget -O mautic-worker.service https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/deploy/systemd/mautic-worker.service
+```
+
+Optional files for etailors SES mode:
+```bash
+wget -O mautic_ses_plugin.sh https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/mautic_ses_plugin.sh
+wget -O mautic_ses_daemon.sh https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/mautic_ses_daemon.sh
+wget -O .env.etailors-ses.example https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/.env.etailors-ses.example
+wget -O .env.etailors-ses-daemon.example https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/.env.etailors-ses-daemon.example
+wget -O mautic-ses-worker.service https://raw.githubusercontent.com/twentyZen/mautic-cronjobs/beta/deploy/systemd/mautic-ses-worker.service
+```
+
+Then make the downloaded scripts executable:
+```bash
+chmod +x mautic.sh mautic_daemon.sh mautic_ses_plugin.sh mautic_ses_daemon.sh
+```
 
 ## Example env file ##
 * reports and webhook queuing is disabled, set to true if you want to use it
