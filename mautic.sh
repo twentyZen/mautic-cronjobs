@@ -24,13 +24,21 @@
 
 # Version 3 - 05.05.2026
 
-# Load .env if available, using the script's directory as the base path
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$script_dir/.env" ]; then
+load_env_file() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        echo "Required environment file '$env_file' was not found." >&2
+        exit 1
+    fi
+
     set -o allexport
-    source "$script_dir/.env"
+    source "$env_file"
     set +o allexport
-fi
+}
+
+load_env_file "$script_dir/.env.common"
+load_env_file "$script_dir/.env"
 
 # Set working directory to the script's location
 cd "$script_dir" || exit 1
@@ -74,6 +82,7 @@ fi
 
 mkdir -p "$log_dir"
 mkdir -p "$error_log_dir"
+mkdir -p "$(dirname "$lockfile")"
 
 # Lock mechanism: prevent multiple script instances using flock
 exec 200>"$lockfile"
@@ -135,38 +144,79 @@ execute_command() {
     return $ret
 }
 
+get_queue_transport() {
+    local queue_cmd="$1"
+    local queue_cmd_parts=()
+
+    read -r -a queue_cmd_parts <<< "$queue_cmd"
+
+    if [ "${queue_cmd_parts[0]:-}" != "messenger:consume" ] || [ -z "${queue_cmd_parts[1]:-}" ]; then
+        echo "COMMAND_QUEUE must start with 'messenger:consume <transport>'." >&2
+        exit 1
+    fi
+
+    if [[ ! "${queue_cmd_parts[1]}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        echo "COMMAND_QUEUE transport '${queue_cmd_parts[1]}' contains unsupported characters." >&2
+        exit 1
+    fi
+
+    printf '%s\n' "${queue_cmd_parts[1]}"
+}
+
 count_queue_messages() {
+    local queue_transport="$1"
+    local raw_output
     local count
 
-    count=$("${php_cmd[@]}" "$pathtoconsole" doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages" 2>/dev/null \
-        | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
+    raw_output=$("${php_cmd[@]}" "$pathtoconsole" doctrine:query:sql "SELECT COUNT(*) FROM messenger_messages WHERE queue_name = '$queue_transport'" 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "Failed to count messages in queue '$queue_transport'." | tee -a "$log_file" "$error_log_file" >&2
+        printf '%s\n' "$raw_output" >> "$error_log_file"
+        return 1
+    fi
+
+    count=$(printf '%s\n' "$raw_output" | awk 'BEGIN {c=0} /^[[:space:]]*[0-9]+[[:space:]]*$/ {c=$1} END {print c}')
 
     if [[ "$count" =~ ^[0-9]+$ ]]; then
         printf '%s\n' "$count"
     else
-        printf '0\n'
+        echo "Unable to parse queue count for '$queue_transport'." | tee -a "$log_file" "$error_log_file" >&2
+        printf '%s\n' "$raw_output" >> "$error_log_file"
+        return 1
     fi
 }
+
+overall_exit_code=0
 
 # Execute commands in a defined order based on the COMMAND_ORDER variable
 IFS=',' read -r -a command_array <<< "$COMMAND_ORDER"
 for cmd in "${command_array[@]}"; do
     # Construct variable name for the command (e.g. COMMAND_SEGMENTS_UPDATE)
     command_var="COMMAND_${cmd}"
+    if [ -z "${!command_var+x}" ]; then
+        echo "Required environment variable '$command_var' is not set." | tee -a "$log_file" "$error_log_file" >&2
+        overall_exit_code=1
+        continue
+    fi
     # Split command and its execution flag using '|'
     IFS="|" read -r command_string exec_flag <<< "${!command_var}"
     
     if [ "$exec_flag" = "true" ]; then
-        execute_command "$command_string"
+        if ! execute_command "$command_string"; then
+            overall_exit_code=1
+        fi
     fi
 done
 
 # Process the queue if the COMMAND_QUEUE execution flag is true
 IFS="|" read -r queue_command queue_exec_flag <<< "$COMMAND_QUEUE"
 if [ "$queue_exec_flag" = "true" ]; then
+    queue_transport=$(get_queue_transport "$queue_command")
     # Get the initial count of messages in the queue and trim whitespace
-    initial_count=$(count_queue_messages)
-    echo "Messages initially in queue: $initial_count" | tee -a "$log_file"
+    if ! initial_count=$(count_queue_messages "$queue_transport"); then
+        exit 1
+    fi
+    echo "Messages initially in queue '$queue_transport': $initial_count" | tee -a "$log_file"
     
     if [ "$initial_count" -gt 0 ]; then
         current_loop=0
@@ -174,11 +224,15 @@ if [ "$queue_exec_flag" = "true" ]; then
             current_loop=$((current_loop+1))
             if ! execute_command "$queue_command"; then
                 echo "Queue command failed in loop $current_loop. Stopping queue processing." | tee -a "$log_file" "$error_log_file"
+                overall_exit_code=1
                 break
             fi
             
-            count=$(count_queue_messages)
-            echo "Messages remaining in queue: $count" | tee -a "$log_file"
+            if ! count=$(count_queue_messages "$queue_transport"); then
+                overall_exit_code=1
+                break
+            fi
+            echo "Messages remaining in queue '$queue_transport': $count" | tee -a "$log_file"
             
             [ "$count" -eq 0 ] && break
             sleep "$QUEUE_DELAY"
@@ -190,3 +244,5 @@ fi
 
 limit_log_files "$log_dir" "$max_logs"
 limit_log_files "$error_log_dir" "$max_error_logs"
+
+exit "$overall_exit_code"

@@ -24,13 +24,21 @@
 
 # Version 3 - SES plugin managed throttling
 
-# Load .env if available, using the script's directory as the base path
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$script_dir/.env" ]; then
+load_env_file() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        echo "Required environment file '$env_file' was not found." >&2
+        exit 1
+    fi
+
     set -o allexport
-    source "$script_dir/.env"
+    source "$env_file"
     set +o allexport
-fi
+}
+
+load_env_file "$script_dir/.env.common"
+load_env_file "$script_dir/.env"
 
 # Set working directory to the script's location
 cd "$script_dir" || exit 1
@@ -72,6 +80,7 @@ fi
 
 mkdir -p "$log_dir"
 mkdir -p "$error_log_dir"
+mkdir -p "$(dirname "$lockfile")"
 
 # Lock mechanism: prevent multiple script instances using flock
 exec 200>"$lockfile"
@@ -133,21 +142,34 @@ execute_command() {
 }
 
 # Execute commands in a defined order based on the COMMAND_ORDER variable
+overall_exit_code=0
+
 IFS=',' read -r -a command_array <<< "$COMMAND_ORDER"
 for cmd in "${command_array[@]}"; do
     command_var="COMMAND_${cmd}"
+    if [ -z "${!command_var+x}" ]; then
+        echo "Required environment variable '$command_var' is not set." | tee -a "$log_file" "$error_log_file" >&2
+        overall_exit_code=1
+        continue
+    fi
     IFS="|" read -r command_string exec_flag <<< "${!command_var}"
 
     if [ "$exec_flag" = "true" ]; then
-        execute_command "$command_string"
+        if ! execute_command "$command_string"; then
+            overall_exit_code=1
+        fi
     fi
 done
 
 # Run the queue consumer exactly once and let the SES plugin handle throttling.
 IFS="|" read -r queue_command queue_exec_flag <<< "$COMMAND_QUEUE"
 if [ "$queue_exec_flag" = "true" ]; then
-    execute_command "$queue_command"
+    if ! execute_command "$queue_command"; then
+        overall_exit_code=1
+    fi
 fi
 
 limit_log_files "$log_dir" "$max_logs"
 limit_log_files "$error_log_dir" "$max_error_logs"
+
+exit "$overall_exit_code"

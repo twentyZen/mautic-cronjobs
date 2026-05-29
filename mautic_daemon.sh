@@ -25,11 +25,20 @@
 # Version 3 - Generic rate-limited daemon worker
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$script_dir/.env" ]; then
+load_env_file() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        echo "Required environment file '$env_file' was not found." >&2
+        exit 1
+    fi
+
     set -o allexport
-    source "$script_dir/.env"
+    source "$env_file"
     set +o allexport
-fi
+}
+
+load_env_file "$script_dir/.env.common"
+load_env_file "$script_dir/.env.daemon"
 
 cd "$script_dir" || exit 1
 
@@ -65,6 +74,7 @@ if [ ${#php_cmd[@]} -eq 0 ]; then
 fi
 
 mkdir -p "$daemon_log_dir"
+mkdir -p "$(dirname "$daemon_lockfile")"
 
 daemon_log_file="$daemon_log_dir/worker_$(date +'%Y%m%d_%H%M%S').log"
 worker_status_file="$daemon_log_dir/worker.status"

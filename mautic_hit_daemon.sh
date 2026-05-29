@@ -22,7 +22,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# Version 3 - SES plugin daemon worker
+# Version 3 - Hit/tracking daemon worker
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 load_env_file() {
@@ -38,17 +38,17 @@ load_env_file() {
 }
 
 load_env_file "$script_dir/.env.common"
-load_env_file "$script_dir/.env.ses-daemon"
+load_env_file "$script_dir/.env.hit-daemon"
 
 cd "$script_dir" || exit 1
 
 phpinterpreter="$PHP_INTERPRETER"
 pathtoconsole="$PATH_TO_CONSOLE"
-daemon_log_dir="$SES_DAEMON_LOG_DIR"
-max_daemon_logs="$MAX_SES_DAEMON_LOGS"
-daemon_lockfile="$SES_DAEMON_LOCKFILE"
-daemon_memory_limit="$SES_DAEMON_MEMORY_LIMIT"
-daemon_time_limit="${SES_DAEMON_TIME_LIMIT:-}"
+daemon_log_dir="$HIT_DAEMON_LOG_DIR"
+max_daemon_logs="$MAX_HIT_DAEMON_LOGS"
+daemon_lockfile="$HIT_DAEMON_LOCKFILE"
+daemon_memory_limit="$HIT_DAEMON_MEMORY_LIMIT"
+daemon_time_limit="${HIT_DAEMON_TIME_LIMIT:-}"
 MYSELF_PID=$$
 
 require_env_var() {
@@ -61,10 +61,10 @@ require_env_var() {
 
 require_env_var "PHP_INTERPRETER"
 require_env_var "PATH_TO_CONSOLE"
-require_env_var "SES_DAEMON_LOCKFILE"
-require_env_var "SES_DAEMON_LOG_DIR"
-require_env_var "SES_DAEMON_MEMORY_LIMIT"
-require_env_var "MAX_SES_DAEMON_LOGS"
+require_env_var "HIT_DAEMON_LOCKFILE"
+require_env_var "HIT_DAEMON_LOG_DIR"
+require_env_var "HIT_DAEMON_MEMORY_LIMIT"
+require_env_var "MAX_HIT_DAEMON_LOGS"
 
 read -r -a php_cmd <<< "$phpinterpreter"
 if [ ${#php_cmd[@]} -eq 0 ]; then
@@ -81,7 +81,7 @@ worker_status_file="$daemon_log_dir/worker.status"
 exec 200>"$daemon_lockfile"
 if ! flock -n 200; then
     existing_pid=$(cat "$daemon_lockfile" 2>/dev/null)
-    echo "SES daemon worker is already running with PID $existing_pid." >&2
+    echo "Hit daemon worker is already running with PID $existing_pid." >&2
     exit 1
 fi
 echo "$MYSELF_PID" >&200
@@ -110,7 +110,7 @@ limit_log_files() {
 
 worker_cmd_parts=(
     "messenger:consume"
-    "email"
+    "hit"
     "--memory-limit=$daemon_memory_limit"
 )
 
@@ -118,7 +118,7 @@ if [ -n "$daemon_time_limit" ]; then
     worker_cmd_parts+=("--time-limit=$daemon_time_limit")
 fi
 
-echo "Starting SES-aware queue worker: ${worker_cmd_parts[*]}" | tee -a "$daemon_log_file"
+echo "Starting hit/tracking queue worker: ${worker_cmd_parts[*]}" | tee -a "$daemon_log_file"
 printf 'started_at=%s\ncommand=%s\nmemory_limit=%s\ntime_limit=%s\n' \
     "$(date -Iseconds)" "${worker_cmd_parts[*]}" "$daemon_memory_limit" "${daemon_time_limit:-none}" > "$worker_status_file"
 
