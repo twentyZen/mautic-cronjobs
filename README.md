@@ -198,6 +198,7 @@ Important notes for this setup:
 * if you need multiple workers, define them explicitly as separate systemd units or templated instances instead of launching additional unmanaged copies manually
 * start with a single worker and increase only if you actually need more throughput
 * newer versions of the etailors SES plugin coordinate send rate across workers, but your effective throughput should still be verified against real SES behavior and logs
+* if email and hit both use Doctrine transport, configure `messenger_dsn_email` with an explicit `queue_name=email`
 
 ## Variant for hit/tracking workers ##
 If Mautic processes page hits or email opens or clicks asynchronously via messenger transport `hit`, use:
@@ -213,6 +214,10 @@ Use this worker whenever `messenger_dsn_hit` points to a Doctrine-backed transpo
 Important notes for this setup:
 * the hit worker uses the same `messenger_messages` table as other Doctrine transports by default
 * transport separation happens via `queue_name`, not via a separate `table_name`
+* if email and hit both use Doctrine, set both DSNs explicitly; `doctrine://default` without `queue_name` is not enough for a separated setup
+* recommended `local.php` snippet:
+  `'messenger_dsn_email' => 'doctrine://default?queue_name=email',`
+  `'messenger_dsn_hit' => 'doctrine://default?queue_name=hit',`
 * one worker is usually enough because stats processing is latency-tolerant
 * start with `HIT_DAEMON_MEMORY_LIMIT="256M"`
 * keep `HIT_DAEMON_TIME_LIMIT=3600` unless you have a clear reason to change it
@@ -220,7 +225,8 @@ Important notes for this setup:
 * for verification, run `messenger:consume hit --limit=1 -vv` and confirm that Mautic reports `Consuming messages from transport "hit"`
 
 Not part of this repository change:
-* switching `messenger_dsn_hit` in `config/local.php` from `sync://` to `doctrine://default`
+* switching `messenger_dsn_hit` in `config/local.php` from `sync://` to `doctrine://default?queue_name=hit`
+* aligning `messenger_dsn_email` to `doctrine://default?queue_name=email` when both transports share Doctrine
 * `cache:clear` and PHP-FPM restart after that Mautic config change
 * checking `bin/console debug:messenger` if your actual transport alias differs from `hit`
 

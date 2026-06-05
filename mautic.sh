@@ -133,7 +133,8 @@ execute_command() {
 
     "${php_cmd[@]}" "$pathtoconsole" "${cmd_parts[@]}" 2>&1 \
         | sed '/^$/d' \
-        | tee -a "$log_file" > "$tmp_output"
+        | tee -a "$log_file" \
+        | tee "$tmp_output"
     ret=${PIPESTATUS[0]}
 
     if [ "$ret" -ne 0 ]; then
