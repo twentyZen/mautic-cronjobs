@@ -257,6 +257,33 @@ That means:
 * recent plugin versions add shared rate coordination across workers, but conservative rollout is still recommended: start with one worker, then scale out only if needed
 * compared to the generic non-etailors worker, this is a technically cleaner limit model because throttling happens at the actual transport or API call layer
 
+## Per-command environment variables ##
+A command in a `COMMAND_*` variable may be prefixed with `VAR=value` assignments, exactly as a shell would accept them:
+
+```
+COMMAND_BROADCASTS_SEND_SLOW="MAUTIC_THROTTLE_PASS=slow mautic:broadcasts:send --batch=50 --limit=8|true"
+```
+
+The assignments apply to that one command only. They do not leak into the commands that follow, which is the difference to exporting the variable in the env file.
+
+This is needed because `mautic.sh` and `mautic_ses_plugin.sh` split the command string into an argument array and hand it to `bin/console` directly, without a shell in between. A leading assignment would otherwise be passed on as the command name, and Symfony would abort with `Command "MAUTIC_THROTTLE_PASS=slow" is not defined.` — while the intended command silently never runs.
+
+Commands without a prefix are executed exactly as before, so existing env files keep working unchanged.
+
+A typical use is splitting the broadcast into several passes with the [ThrottleQueue plugin](https://github.com/twentyZen/mautic-throttle-queue), each pass with its own limit:
+
+```
+COMMAND_ORDER=SEGMENTS_UPDATE,CAMPAIGNS_REBUILD,CAMPAIGNS_TRIGGER,BROADCASTS_SEND_SLOW,BROADCASTS_SEND_FAST,UNUSED_IP_DELETE
+
+COMMAND_BROADCASTS_SEND_SLOW="MAUTIC_THROTTLE_PASS=slow mautic:broadcasts:send --batch=$BROADCASTS_BATCH_LIMIT --limit=8|true"
+COMMAND_BROADCASTS_SEND_FAST="MAUTIC_THROTTLE_PASS=fast mautic:broadcasts:send --batch=$BROADCASTS_BATCH_LIMIT --limit=$BROADCASTS_SEND_LIMIT|true"
+```
+
+Note:
+* put the throttled pass first — if a run is cut short, the small pass has already finished and the large one catches up on the next run
+* every pass needs its own entry, including `fast`; a pass without one leaves exactly those contacts pending, with nothing in the log
+* the daemon variants build their worker command in the script itself and take no `COMMAND_*` string, so this does not apply to them
+
 ## Useful settings ##
 For now please follow this thread: https://forum.mautic.org/t/a-small-guide-to-send-mails-using-doctrine-for-queue-in-mautic-5/33118/22
 If you send directly without queue, which is not recommended, be careful with the batch size. SMTP can only handle up to 10 per call, API differs between mail service providers, for example 50 for Mailjet API v3.

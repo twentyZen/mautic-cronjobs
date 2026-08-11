@@ -121,17 +121,47 @@ limit_log_files() {
 }
 
 # Execute a command and log its output, removing empty lines
+#
+# A command may be prefixed with VAR=value assignments, the way a shell would accept them:
+#
+#     COMMAND_BROADCASTS_SEND="MAUTIC_THROTTLE_PASS=slow mautic:broadcasts:send --limit=8|true"
+#
+# Those are stripped off and applied via env, so they reach that one process only. Without a
+# prefix the command runs exactly as before. This is needed because the command string is split
+# into an argument array and handed to bin/console directly - no shell is involved, so a leading
+# assignment would otherwise be passed on as the command name.
 execute_command() {
     local cmd="$1"
     echo "Executing: $cmd" | tee -a "$log_file"
     local tmp_output
     local ret
     local cmd_parts=()
+    local env_assignments=()
 
     read -r -a cmd_parts <<< "$cmd"
+
+    # Leading NAME=value tokens are environment, everything from the first non-assignment on is
+    # the command. Only valid identifiers count, so an argument like --foo=bar is never eaten.
+    while [ ${#cmd_parts[@]} -gt 0 ] && [[ "${cmd_parts[0]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+        env_assignments+=("${cmd_parts[0]}")
+        cmd_parts=("${cmd_parts[@]:1}")
+    done
+
+    if [ ${#cmd_parts[@]} -eq 0 ]; then
+        echo "Command '$cmd' consists only of environment assignments." \
+            | tee -a "$log_file" "$error_log_file" >&2
+        return 1
+    fi
+
     tmp_output=$(mktemp "${TMPDIR:-/tmp}/mautic-cronjobs.XXXXXX") || exit 1
 
-    "${php_cmd[@]}" "$pathtoconsole" "${cmd_parts[@]}" 2>&1 \
+    # Without a prefix this is the exact call as before; env is only inserted when needed.
+    local runner=("${php_cmd[@]}" "$pathtoconsole")
+    if [ ${#env_assignments[@]} -gt 0 ]; then
+        runner=(env "${env_assignments[@]}" "${runner[@]}")
+    fi
+
+    "${runner[@]}" "${cmd_parts[@]}" 2>&1 \
         | sed '/^$/d' \
         | tee -a "$log_file" \
         | tee "$tmp_output"
